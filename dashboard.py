@@ -1,8 +1,9 @@
-from flask import Flask, render_template, redirect, url_for, request, jsonify
+from flask import Flask, render_template, redirect, url_for, request, jsonify, flash
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os, hashlib, json, re
 from datetime import datetime
+import shutil
 from mailer import send_email
 from qr_generator import generate_qr
 from dotenv import load_dotenv
@@ -17,10 +18,13 @@ CREDENTIALS_FILE = os.getenv("GOOGLE_SHEET_CREDENTIALS", "credentials.json")
 SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_URL = os.getenv("SHEET_URL")
 OUTPUT_DIR = "responses"
+QR_CODE_DIR = "qrcodes"
 # ==========================================
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)  # Needed for flashing messages
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(QR_CODE_DIR, exist_ok=True)
 
 # ---------------- Google Sheets Setup ----------------
 scope = [
@@ -201,6 +205,28 @@ def view_submission(unique_id):
             return render_template("view_submission.html", data=data, unique_id=unique_id, sent=sent)
     return "Submission not found", 404
 
+@app.route("/delete_all_data", methods=["POST"])
+def delete_all_data():
+    """Delete all generated QR codes and response JSON files."""
+    try:
+        # Recreate responses directory
+        if os.path.exists(OUTPUT_DIR):
+            shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+        # Recreate qrcodes directory
+        if os.path.exists(QR_CODE_DIR):
+            shutil.rmtree(QR_CODE_DIR, ignore_errors=True)
+        os.makedirs(QR_CODE_DIR, exist_ok=True)
+
+        flash("All generated responses and QR codes have been deleted.", "success")
+    except Exception as e:
+        flash(f"An error occurred while deleting files: {e}", "error")
+        app.logger.error(f"Failed to delete all data: {e}")
+
+    return redirect(url_for("home"))
+
+
 # ------------------ QR Scan Routes ------------------
 @app.route("/scan")
 def scan():
@@ -261,4 +287,9 @@ def mark_as_sent(unique_id):
 
 # ------------------ Run App ------------------
 if __name__ == "__main__":
+    import os
+    if os.getenv("GOOGLE_CREDENTIALS_JSON"):
+        with open("credentials.json", "w") as f:
+            f.write(os.getenv("GOOGLE_CREDENTIALS_JSON"))
+
     app.run(debug=True)
