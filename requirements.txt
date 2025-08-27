@@ -2,5 +2,6 @@ Flask
 gspread
 oauth2client
 qrcode
+pillow
 python-dotenv
 gunicorn
