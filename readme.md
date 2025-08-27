@@ -92,23 +92,6 @@ This app can be deployed to cloud platforms such as:
 
 ---
 
-## File Structure 📂
-
-```
-qr-ticket-dashboard/
-├── dashboard.py         # Main Flask application
-├── qr_generator.py      # QR code generation module
-├── mailer.py            # Email sending module
-├── credentials.json     # Google service account (keep private)
-├── requirements.txt     # Python dependencies
-├── templates/           # HTML templates for Flask
-│   ├── dashboard.html
-│   └── scan.html
-├── qrcodes/             # Generated QR code images
-└── responses/           # Stored form responses in JSON
-```
-
----
 
 ## Security Tips 🔒
 
