@@ -1,28 +1,33 @@
 from flask import Flask, render_template, redirect, url_for, request, jsonify, flash
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import os, hashlib, json, re
+from google.oauth2.service_account import Credentials  # Changed from oauth2client
+import os, hashlib, json, re, shutil
 from datetime import datetime
-import shutil
 from mailer import send_email
 from qr_generator import generate_qr
 from dotenv import load_dotenv
-import os
 
 # ================= CONFIG =================
 load_dotenv()  # Load environment variables from .env
 
 MAIL_USER = os.getenv("MAIL_USER")
 MAIL_PASS = os.getenv("MAIL_PASS")
-CREDENTIALS_FILE = os.getenv("GOOGLE_SHEET_CREDENTIALS", "credentials.json")
 SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_URL = os.getenv("SHEET_URL")
 OUTPUT_DIR = "responses"
 QR_CODE_DIR = "qrcodes"
+
+# Google Credentials from .env
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Single-line JSON in .env
+if not GOOGLE_CREDENTIALS_JSON:
+    raise ValueError("Missing GOOGLE_CREDENTIALS_JSON in .env!")
+
 # ==========================================
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Needed for flashing messages
+app.secret_key = os.urandom(24)
+
+# Create necessary directories
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(QR_CODE_DIR, exist_ok=True)
 
@@ -31,13 +36,15 @@ scope = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.readonly"
 ]
-creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-client = gspread.authorize(creds)
+
+creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
+
+client = gspread.authorize(credentials)
 sheet = client.open_by_url(SHEET_URL).worksheet(SHEET_NAME)
 
 # ---------------- Utility Functions ----------------
 def get_existing_ids():
-    """Return a set of unique IDs already processed (from JSON filenames in OUTPUT_DIR)."""
     ids = set()
     for fname in os.listdir(OUTPUT_DIR):
         if fname.endswith('.json'):
@@ -63,7 +70,6 @@ def get_next_submission_number():
     return max(numbers, default=0) + 1
 
 def process_submission(data):
-    """Generate QR, save JSON, return info tuple"""
     timestamp = data.get('Timestamp', str(datetime.now()))
     email = data.get('Email address', '')
     name = data.get('Name', 'unknown')
@@ -81,16 +87,46 @@ def process_submission(data):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
     return name, email, qr_filename, json_filename, unique_id
-# ----------------------------------------------------
+
+def mark_as_sent(unique_id):
+    for fname in os.listdir(OUTPUT_DIR):
+        if fname.endswith('.json'):
+            with open(os.path.join(OUTPUT_DIR, fname), encoding="utf-8") as f:
+                data = json.load(f)
+            timestamp = data.get('Timestamp', '')
+            email = data.get('Email address', '')
+            unique_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
+            file_unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{unique_hash}"
+            if file_unique_id == unique_id:
+                data['sent'] = True
+                with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                break
 
 # ------------------ Routes ------------------
 @app.route("/")
 def home():
     return render_template("home.html")
 
+@app.route("/delete_all_data", methods=["POST"])
+def delete_all_data():
+    try:
+        if os.path.exists(OUTPUT_DIR):
+            shutil.rmtree(OUTPUT_DIR)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+        if os.path.exists(QR_CODE_DIR):
+            shutil.rmtree(QR_CODE_DIR)
+        os.makedirs(QR_CODE_DIR, exist_ok=True)
+
+        flash("All generated responses and QR codes have been deleted.", "success")
+    except Exception as e:
+        flash(f"An error occurred while deleting files: {e}", "error")
+        app.logger.error(f"Failed to delete all data: {e}")
+    return redirect(url_for("home"))
+
 @app.route("/dashboard")
 def dashboard():
-    """Show list of Google Form submissions"""
     values = sheet.get_all_values()
     headers, rows = values[0], values[1:]
     processed_ids = get_existing_ids()
@@ -113,10 +149,8 @@ def dashboard():
 
     return render_template("dashboard.html", users=users)
 
-
 @app.route("/send/<unique_id>")
 def send(unique_id):
-    """Send QR code email for a specific submission"""
     values = sheet.get_all_values()
     headers, rows = values[0], values[1:]
 
@@ -154,7 +188,6 @@ def submissions():
             continue
         unique_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
         unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{unique_hash}"
-        # Check if sent
         sent = False
         for fname in os.listdir(OUTPUT_DIR):
             if fname.endswith('.json'):
@@ -189,7 +222,6 @@ def view_submission(unique_id):
         unique_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
         row_unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{unique_hash}"
         if row_unique_id == unique_id:
-            # Check if sent
             sent = False
             for fname in os.listdir(OUTPUT_DIR):
                 if fname.endswith('.json'):
@@ -205,42 +237,16 @@ def view_submission(unique_id):
             return render_template("view_submission.html", data=data, unique_id=unique_id, sent=sent)
     return "Submission not found", 404
 
-@app.route("/delete_all_data", methods=["POST"])
-def delete_all_data():
-    """Delete all generated QR codes and response JSON files."""
-    try:
-        # Recreate responses directory
-        if os.path.exists(OUTPUT_DIR):
-            shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-        # Recreate qrcodes directory
-        if os.path.exists(QR_CODE_DIR):
-            shutil.rmtree(QR_CODE_DIR, ignore_errors=True)
-        os.makedirs(QR_CODE_DIR, exist_ok=True)
-
-        flash("All generated responses and QR codes have been deleted.", "success")
-    except Exception as e:
-        flash(f"An error occurred while deleting files: {e}", "error")
-        app.logger.error(f"Failed to delete all data: {e}")
-
-    return redirect(url_for("home"))
-
-
-# ------------------ QR Scan Routes ------------------
 @app.route("/scan")
 def scan():
-    """Page to scan QR codes"""
     return render_template("scan.html")
 
 @app.route("/verify_qr", methods=["POST"])
 def verify_qr():
     data = request.get_json()
-    # Accept both 'qr_data' and 'qr_content'
     qr_content = data.get("qr_content") or data.get("qr_data") or ""
-    print(f"Scanned QR content: {qr_content}")  # Print in terminal
+    print(f"Scanned QR content: {qr_content}")
 
-    import json
     try:
         qr_json = json.loads(qr_content)
     except Exception:
@@ -251,7 +257,6 @@ def verify_qr():
     if not unique_id or not name:
         return jsonify({"valid": False, "message": "❌ QR code missing required fields.", "qr_content": qr_content})
 
-    # Check if unique_id exists in submissions (responses folder)
     found = False
     for fname in os.listdir(OUTPUT_DIR):
         if fname.endswith('.json'):
@@ -269,27 +274,6 @@ def verify_qr():
     else:
         return jsonify({"valid": False, "message": "❌ QR code not found.", "qr_content": qr_content})
 
-def mark_as_sent(unique_id):
-    # Find the JSON file for this unique_id and update it
-    for fname in os.listdir(OUTPUT_DIR):
-        if fname.endswith('.json'):
-            with open(os.path.join(OUTPUT_DIR, fname), encoding="utf-8") as f:
-                data = json.load(f)
-            timestamp = data.get('Timestamp', '')
-            email = data.get('Email address', '')
-            unique_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
-            file_unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{unique_hash}"
-            if file_unique_id == unique_id:
-                data['sent'] = True
-                with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                break
-
 # ------------------ Run App ------------------
 if __name__ == "__main__":
-    import os
-    if os.getenv("GOOGLE_CREDENTIALS_JSON"):
-        with open("credentials.json", "w") as f:
-            f.write(os.getenv("GOOGLE_CREDENTIALS_JSON"))
-
     app.run(debug=True)
