@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QR Invite Dashboard</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 10px; }
+        th { background: #f4f4f4; }
+        .processed { background: #d4edda; }
+        .pending { background: #f8d7da; }
+        a { padding: 6px 12px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; }
+        a.disabled { background: gray; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <h2>📋 QR Invite Dashboard</h2>
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Timestamp</th>
+            <th>Status</th>
+            <th>Action</th>
+        </tr>
+        {% for u in users %}
+        <tr class="{{ 'processed' if u.processed else 'pending' }}">
+            <td>{{ u.name }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.timestamp }}</td>
+            <td>{{ '✅ Sent' if u.processed else '⏳ Pending' }}</td>
+            <td>
+                {% if not u.processed %}
+                    <a href="{{ url_for('send', unique_id=u.id) }}">Send</a>
+                {% else %}
+                    <a class="disabled">Done</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
