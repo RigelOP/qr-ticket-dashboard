@@ -31,6 +31,25 @@ app.secret_key = os.urandom(24)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(QR_CODE_DIR, exist_ok=True)
 
+UNIQUE_IDS_FILE = "unique_ids.json"
+
+# Ensure the file exists
+if not os.path.exists(UNIQUE_IDS_FILE):
+    with open(UNIQUE_IDS_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f)
+
+def save_unique_id(unique_id):
+    """Add unique_id to the JSON file if not already present."""
+    try:
+        with open(UNIQUE_IDS_FILE, "r", encoding="utf-8") as f:
+            ids = json.load(f)
+    except Exception:
+        ids = []
+
+    if unique_id not in ids:
+        ids.append(unique_id)
+        with open(UNIQUE_IDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(ids, f, indent=2)
 # ---------------- Google Sheets Setup ----------------
 scope = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -80,6 +99,8 @@ def process_submission(data):
     qr_content = json.dumps({"id": unique_id, "name": name})
     safe_name = re.sub(r'[\/:*?"<>|@ ]', "_", name)
     qr_filename = generate_qr(qr_content, filename=f"{unique_id}_{safe_name}.png")
+    # Save unique_id to central JSON file
+    save_unique_id(unique_id)
 
     submission_number = get_next_submission_number()
     json_filename = f"{OUTPUT_DIR}/{submission_number:02d} {safe_name}.json"
@@ -260,14 +281,14 @@ def verify_qr():
             "qr_content": qr_content
         })
 
-    # Check if any PNG in QR_CODE_DIR starts with the unique_id
-    found = False
-    for fname in os.listdir(QR_CODE_DIR):
-        if fname.startswith(qr_id) and fname.endswith(".png"):
-            found = True
-            break
+    # Check if the unique_id exists in unique_ids.json
+    try:
+        with open(UNIQUE_IDS_FILE, "r", encoding="utf-8") as f:
+            ids = json.load(f)
+    except Exception:
+        ids = []
 
-    if found:
+    if qr_id in ids:
         return jsonify({
             "valid": True,
             "message": f"✅ QR Verified! ID: {qr_id}",
