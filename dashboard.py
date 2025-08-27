@@ -247,32 +247,39 @@ def verify_qr():
     qr_content = data.get("qr_content") or data.get("qr_data") or ""
     print(f"Scanned QR content: {qr_content}")
 
+    # Parse QR content as JSON
     try:
         qr_json = json.loads(qr_content)
-    except Exception:
-        return jsonify({"valid": False, "message": "❌ Invalid QR code format", "qr_content": qr_content})
+        qr_id = qr_json.get("id")
+        if not qr_id:
+            raise ValueError("Missing 'id' in QR content")
+    except Exception as e:
+        return jsonify({
+            "valid": False,
+            "message": f"❌ Invalid QR code: {e}",
+            "qr_content": qr_content
+        })
 
-    unique_id = qr_json.get("id")
-    name = qr_json.get("name")
-    if not unique_id or not name:
-        return jsonify({"valid": False, "message": "❌ QR code missing required fields.", "qr_content": qr_content})
-
+    # Check if any PNG in QR_CODE_DIR starts with the unique_id
     found = False
-    for fname in os.listdir(OUTPUT_DIR):
-        if fname.endswith('.json'):
-            with open(os.path.join(OUTPUT_DIR, fname), encoding="utf-8") as f:
-                data = json.load(f)
-            timestamp = data.get('Timestamp', '')
-            email = data.get('Email address', '')
-            unique_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
-            file_unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{unique_hash}"
-            if file_unique_id == unique_id and data.get('Name', '').strip() == name:
-                found = True
-                break
+    for fname in os.listdir(QR_CODE_DIR):
+        if fname.startswith(qr_id) and fname.endswith(".png"):
+            found = True
+            break
+
     if found:
-        return jsonify({"valid": True, "message": f"✅ QR Verified! Name: {name}", "name": name, "qr_content": qr_content})
+        return jsonify({
+            "valid": True,
+            "message": f"✅ QR Verified! ID: {qr_id}",
+            "qr_content": qr_content
+        })
     else:
-        return jsonify({"valid": False, "message": "❌ QR code not found.", "qr_content": qr_content})
+        return jsonify({
+            "valid": False,
+            "message": "❌ QR code not found.",
+            "qr_content": qr_content
+        })
+
 
 # ------------------ Run App ------------------
 if __name__ == "__main__":
