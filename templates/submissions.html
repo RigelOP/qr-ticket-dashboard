@@ -1,36 +1,91 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Submissions</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Submissions - QR Ticket Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/feather-icons"></script>
+  <style>
+    .table-row:hover { background-color: #f8fafc; }
+    .action-btn { transition: all 0.2s ease; }
+    .action-btn:hover { transform: translateY(-2px); }
+  </style>
 </head>
-<body class="container py-5">
-    <h2>Form Submissions</h2>
-    <a href="{{ url_for('home') }}" class="btn btn-secondary mb-3">Back to Home</a>
-    <table class="table table-bordered">
-        <thead>
+<body class="bg-gray-100 min-h-screen">
+  <div class="container mx-auto px-4 py-8">
+    <header class="mb-8 flex justify-between items-center">
+      <div>
+        <h1 class="text-3xl font-bold text-indigo-700">Team Submissions</h1>
+        <p class="text-gray-600">View and manage all team registrations</p>
+      </div>
+      <a href="{{ url_for('home') }}" class="flex items-center text-indigo-600 hover:text-indigo-800">
+        <i data-feather="arrow-left" class="mr-2"></i> Back to Dashboard
+      </a>
+    </header>
+
+    <div class="bg-white rounded-xl shadow-md overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
             <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Actions</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
-        </thead>
-        <tbody>
-        {% for user in users %}
-            <tr>
-                <td>{{ user.name }}</td>
-                <td>{{ user.email }}</td>
-                <td>
-                    {% if user.sent %}
-                        <button class="btn btn-success btn-sm" disabled>Sent</button>
-                    {% else %}
-                        <a href="{{ url_for('send', unique_id=user.unique_id) }}" class="btn btn-primary btn-sm">Send</a>
-                    {% endif %}
-                    <a href="{{ url_for('view_submission', unique_id=user.unique_id) }}" class="btn btn-info btn-sm">View</a>
-                </td>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            {% for u in users %}
+            <tr class="table-row">
+              <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ u.name }}</td>
+              <td class="px-6 py-4 text-sm text-gray-500">{{ u.email }}</td>
+              <td class="px-6 py-4">
+                {% if u.sent %}
+                  <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Verified</span>
+                {% else %}
+                  <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Pending</span>
+                {% endif %}
+              </td>
+              <td class="px-6 py-4 text-sm text-gray-500">
+                <a href="{{ url_for('view_submission', unique_id=u.unique_id) }}" class="action-btn mr-3 inline-flex items-center px-3 py-1 rounded-md bg-indigo-600 text-white">
+                  <i data-feather="eye" class="mr-1 w-4 h-4"></i> View
+                </a>
+
+                {% if not u.sent %}
+                <button class="action-btn send-btn inline-flex items-center px-3 py-1 rounded-md bg-green-600 text-white" data-id="{{ u.unique_id }}">
+                  <i data-feather="send" class="mr-1 w-4 h-4"></i> Send
+                </button>
+                {% else %}
+                <button class="action-btn inline-flex items-center px-3 py-1 rounded-md bg-gray-400 text-white" disabled>Sent</button>
+                {% endif %}
+              </td>
             </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+            {% else %}
+            <tr><td colspan="4" class="p-6 text-center text-gray-500">No submissions found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    feather.replace();
+    document.querySelectorAll('.send-btn').forEach(btn=>{
+      btn.addEventListener('click', async function(){
+        const id = this.dataset.id;
+        if(!confirm('Send ticket for this submission?')) return;
+        this.disabled = true;
+        try {
+          const res = await fetch('{{ url_for("send", unique_id="__PLACEHOLDER__") }}'.replace('__PLACEHOLDER__', encodeURIComponent(id)));
+          location.reload();
+        } catch(e) {
+          alert('Failed to send ticket.');
+          this.disabled = false;
+        }
+      });
+    });
+  </script>
 </body>
 </html>

@@ -1,55 +1,230 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Scan QR Code</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <script src="https://unpkg.com/html5-qrcode"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Scan QR - QR Ticket Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/feather-icons"></script>
+  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+  <style>
+    .scanner-container {
+      position: relative;
+      width: 100%;
+      max-width: 320px;       /* smaller camera */
+      margin: 0 auto;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+      aspect-ratio: 1 / 1;
+      background: #e6e7e9;
+      margin-bottom: 0;       /* remove large gap */
+    }
+    .overlay-text {
+      position: absolute;
+      inset: 0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+      color: rgba(255,255,255,0.9);
+      text-align:center;
+      font-size:0.95rem;
+      backdrop-filter: blur(2px);
+    }
+    video { width:100%; height:100%; object-fit:cover; display:block; }
+    #controls { margin-top: 0; display:flex; justify-content:center; gap:0.5rem; margin-bottom: 0.5rem; }
+    .result-card { transition: all .25s ease; }
+  </style>
 </head>
-<body class="container py-5">
-    <h2>Scan QR Code</h2>
-    <a href="{{ url_for('home') }}" class="btn btn-secondary mb-3">Back to Home</a>
-    <div id="reader" style="width:300px"></div>
-    <div id="result" class="mt-4"></div>
-    <script>
-        function showResult(message, isValid, name, qr_content) {
-            let html = '';
-            html += `<div class="alert ${isValid ? 'alert-success' : 'alert-danger'}"><b>${message}</b></div>`;
-            html += `<div class="mt-2"><b>QR Content:</b> <pre>${qr_content}</pre></div>`;
-            html += `<button class="btn btn-primary mt-3" onclick="restartScan()">Back to Scan</button>`;
-            document.getElementById('result').innerHTML = html;
-        }
+<body class="bg-gray-100 min-h-screen">
+  <div class="container mx-auto px-4 py-8">
+    <header class="mb-6 flex justify-between items-center">
+      <div>
+        <h1 class="text-2xl font-bold text-indigo-700">QR Code Scanner</h1>
+        <p class="text-gray-600">Point camera at a QR code — result will appear automatically</p>
+      </div>
+      <a href="{{ url_for('home') }}" class="flex items-center text-indigo-600 hover:text-indigo-800"><i data-feather="arrow-left" class="mr-2"></i>Back</a>
+    </header>
 
-        function restartScan() {
-            document.getElementById('result').innerHTML = '';
-            html5QrcodeScanner.clear().then(() => {
-                html5QrcodeScanner.render(onScanSuccess);
-            });
-        }
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div>
+        <div id="scannerView" class="scanner-container mb-0 relative">
+          <video id="video" playsinline muted></video>
+          <canvas id="canvas" class="hidden"></canvas>
+          <div id="overlay" class="overlay-text">
+            <div>
+              <i data-feather="maximize" class="w-8 h-8 mx-auto mb-2"></i>
+              <div>Point camera at QR code</div>
+              <div class="text-xs text-gray-200 mt-1">Scanning will stop automatically when QR is detected</div>
+            </div>
+          </div>
+        </div>
 
-        function onScanSuccess(decodedText, decodedResult) {
-            html5QrcodeScanner.clear();
-            fetch("{{ url_for('verify_qr') }}", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({qr_content: decodedText})
-            })
-            .then(response => response.json())
-            .then(data => {
-                showResult(
-                    data.message,
-                    data.message.startsWith("✅"),
-                    data.name || "",
-                    data.qr_content || decodedText
-                );
-            })
-            .catch(() => {
-                showResult("Could not verify QR code.", false, "", decodedText);
-            });
-        }
+        <div id="controls">
+          <button id="startBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">Start Camera</button>
+          <button id="stopBtn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg" style="display:none;">Stop</button>
+          <button id="resetBtn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg">Reset</button>
+        </div>
 
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: 250 });
-        html5QrcodeScanner.render(onScanSuccess);
-    </script>
+        <p class="text-sm text-gray-500 mt-1 text-center">or paste QR payload below:</p>
+        <textarea id="qrInput" rows="3" class="w-full p-2 rounded-lg border mt-2" placeholder="Paste QR content here"></textarea>
+        <div class="text-center mt-2">
+          <button id="manualBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">Scan Pasted</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="bg-white rounded-xl shadow-md p-4 mb-4">
+          <h2 class="text-lg font-semibold text-gray-800 mb-3">Scan Result</h2>
+          <div id="resultArea" class="text-gray-600">
+            <div id="noResult" class="text-center py-12 text-gray-400">No QR scanned yet</div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-4">
+          <h2 class="text-lg font-semibold text-gray-800 mb-3">Scan History</h2>
+          <div id="history" class="text-gray-600 text-sm">Recent scans will appear here</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    feather.replace();
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const manualBtn = document.getElementById('manualBtn');
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const resultArea = document.getElementById('resultArea');
+    const historyEl = document.getElementById('history');
+    const noResult = document.getElementById('noResult');
+    const overlay = document.getElementById('overlay');
+
+    let stream = null;
+    let scanning = false;
+    let rafId = null;
+
+    async function startCamera(){
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+
+        // set canvas to the displayed video size (use client size)
+        const rect = video.getBoundingClientRect();
+        canvas.width = Math.max(320, Math.floor(rect.width));
+        canvas.height = Math.max(320, Math.floor(rect.height));
+
+        scanning = true;
+        // UI toggles
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        overlay.style.display = 'none';
+        resetBtn.disabled = true;
+        scanLoop();
+      }catch(err){
+        alert('Camera access failed: ' + err.message);
+      }
+    }
+
+    function stopCamera(){
+      scanning = false;
+      startBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'none';
+      overlay.style.display = 'flex';
+      resetBtn.disabled = false;
+      if(rafId) cancelAnimationFrame(rafId);
+      if(stream){
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+    }
+
+    function scanLoop(){
+      if(!scanning) return;
+      try{
+        // draw on canvas using displayed size to avoid huge canvas
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
+        const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "attemptBoth" });
+        if(code && code.data){
+          handleScanResult(code.data);
+          stopCamera();
+          return;
+        }
+      }catch(e){
+        // ignore per-frame errors
+      }
+      rafId = requestAnimationFrame(scanLoop);
+    }
+
+    function addHistory(text){
+      const entry = document.createElement('div');
+      entry.className = 'py-2 border-b';
+      entry.textContent = `${new Date().toLocaleString()} — ${text}`;
+      historyEl.prepend(entry);
+    }
+
+    function showResult(text, serverInfo){
+      noResult?.remove();
+      resultArea.innerHTML = '';
+      const card = document.createElement('div');
+      card.className = 'result-card p-3 rounded border bg-green-50 text-green-800';
+      card.innerHTML = `<strong>Scanned:</strong> <pre class="whitespace-pre-wrap text-sm mt-2">${escapeHtml(text)}</pre>`;
+      if(serverInfo){
+        card.innerHTML += `<div class="mt-2 text-sm text-gray-700">${escapeHtml(serverInfo)}</div>`;
+      }
+      resultArea.appendChild(card);
+    }
+
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]));
+    }
+
+    async function handleScanResult(payload){
+      showResult(payload, 'Verifying...');
+      addHistory(payload);
+      try{
+        const res = await fetch('{{ url_for("verify_qr") }}', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ qr_content: payload })
+        });
+        if(res.ok){
+          const data = await res.json();
+          const info = data.valid ? `Server: ${data.message || 'Valid'}` : `Server: ${data.message || 'Invalid'}`;
+          showResult(payload, info);
+        } else {
+          const body = await res.json().catch(()=>null);
+          showResult(payload, body?.message || 'Server verification failed');
+        }
+      }catch(e){
+        showResult(payload, 'Server verify unavailable');
+      }
+    }
+
+    manualBtn.addEventListener('click', ()=>{
+      const txt = document.getElementById('qrInput').value.trim();
+      if(!txt) return alert('Paste QR content first.');
+      handleScanResult(txt);
+    });
+
+    startBtn.addEventListener('click', startCamera);
+    stopBtn.addEventListener('click', stopCamera);
+    resetBtn.addEventListener('click', ()=>{
+      stopCamera();
+      resultArea.innerHTML = '<div id="noResult" class="text-center py-12 text-gray-400">No QR scanned yet</div>';
+      historyEl.innerHTML = '';
+      document.getElementById('qrInput').value = '';
+    });
+
+    window.addEventListener('beforeunload', ()=>{
+      if(stream) stream.getTracks().forEach(t=>t.stop());
+    });
+  </script>
 </body>
 </html>
