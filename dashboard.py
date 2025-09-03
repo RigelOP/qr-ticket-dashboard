@@ -378,84 +378,153 @@ def dashboard():
 
     return render_template("dashboard.html", users=users)
 
-@app.route("/send/<unique_id>")
+@app.route("/send/<unique_id>", methods=["GET", "POST"])
 def send(unique_id):
+    print(f"=== SEND ROUTE CALLED FOR: {unique_id} ===")
+    print(f"Request method: {request.method}")
+    print(f"Request referrer: {request.referrer}")
+    print(f"Request form data: {request.form}")
+    print(f"Request args: {request.args}")
+    
     values = sheet.get_all_values()
     if not values:
+        print("No sheet values found")
+        flash("No data found in sheet", "error")
         return redirect(url_for('submissions'))
+    
+    # Check if the request came from the view page
+    came_from_view = request.referrer and '/view/' in request.referrer
+    print(f"Came from view: {came_from_view}")
+    
     headers, rows = values[0], values[1:]
+    print(f"Processing {len(rows)} rows from sheet")
 
+    found_submission = False
     for row in rows:
         data = dict(zip(headers, row))
         email = data.get("Email address", "").strip()
-        # prefer Name, fallback to Team Leader's Name / Team Name
         name = (data.get("Name") or data.get("Team Leader's Name") or data.get("Team Name") or "").strip()
         timestamp = data.get("Timestamp", "").strip()
+        
         if not email or not timestamp:
             continue
+            
         uid_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
         generated_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{uid_hash}"
+        print(f"Generated ID: {generated_id} for email: {email}")
 
         if generated_id == unique_id:
-            name, email, qr_filename, json_filename, _ = process_submission(data)
+            found_submission = True
+            print(f"✅ Found matching submission for {unique_id}")
+            print(f"Email: {email}")
+            print(f"Name: {name}")
             
-            # ADD STAMP TICKET GENERATION HERE
+            # Process submission to generate QR and JSON
+            try:
+                name, email, qr_filename, json_filename, _ = process_submission(data)
+                print(f"Processed submission - QR file: {qr_filename}")
+                
+                if not qr_filename or not os.path.exists(qr_filename):
+                    print(f"❌ QR file not found: {qr_filename}")
+                    flash("QR code file not found. Please regenerate.", "error")
+                    break
+                
+            except Exception as e:
+                print(f"❌ Error processing submission: {e}")
+                flash(f"Error processing submission: {e}", "error")
+                break
+            
+            # Generate ticket
+            ticket_file = None
             if qr_filename:
                 try:
-                    # Load stamp_ticket module
+                    print("🎫 Starting ticket generation...")
                     base_dir = os.path.dirname(__file__)
                     stamp_mod = _load_module(os.path.join(base_dir, "scripts", "stamp_ticket.py"), "stamp_ticket")
                     
-                    # Generate stamped ticket
                     template = stamp_mod.pick_template()
                     team_name = data.get("Team Name") or data.get("Team Leader's Name") or ""
                     ticket_output_dir = os.path.join(base_dir, "ticket_output")
                     os.makedirs(ticket_output_dir, exist_ok=True)
                     ticket_file = os.path.join(ticket_output_dir, f"ticket_{unique_id}.png")
                     
-                    # Fix QR path - qr_filename already includes the path or just the filename
+                    # Fix QR path
                     if os.path.exists(qr_filename):
-                        qr_path = qr_filename  # full path already
+                        qr_path = qr_filename
                     else:
                         qr_path = os.path.join(base_dir, "qrcodes", os.path.basename(qr_filename))
                     
                     print(f"Using QR path: {qr_path}")
-                    stamp_mod.compose_ticket(
-                        template, qr_path, team_name, ticket_file,
-                        qr_anchor_x_pct=getattr(stamp_mod, "QR_ANCHOR_X_PCT", None),
-                        qr_anchor_y_pct=getattr(stamp_mod, "QR_ANCHOR_Y_PCT", None),
-                        offset_x_px=getattr(stamp_mod, "OFFSET_X_PX", 0),
-                        offset_y_px=getattr(stamp_mod, "OFFSET_Y_PX", 0)
-                    )
-                    print(f"Generated ticket: {ticket_file}")
+                    
+                    if not os.path.exists(qr_path):
+                        print(f"❌ QR file not found at: {qr_path}")
+                        ticket_file = None
+                    else:
+                        stamp_mod.compose_ticket(
+                            template, qr_path, team_name, ticket_file,
+                            qr_anchor_x_pct=getattr(stamp_mod, "QR_ANCHOR_X_PCT", None),
+                            qr_anchor_y_pct=getattr(stamp_mod, "QR_ANCHOR_Y_PCT", None),
+                            offset_x_px=getattr(stamp_mod, "OFFSET_X_PX", 0),
+                            offset_y_px=getattr(stamp_mod, "OFFSET_Y_PX", 0)
+                        )
+                        print(f"✅ Generated ticket: {ticket_file}")
+                        
+                except Exception as e:
+                    print(f"❌ Ticket generation failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    ticket_file = None
+            
+            # Send email
+            if email and qr_filename:
+                print(f"📧 Attempting to send email to: {email}")
+                try:
+                    if ticket_file and os.path.exists(ticket_file):
+                        print(f"Sending ticket file: {ticket_file}")
+                        send_email(
+                            email,
+                            "Your Event Ticket 🎟️",
+                            f"Hello {name},\n\nHere is your event ticket with QR code.\n\nThanks!",
+                            ticket_file
+                        )
+                        flash(f"Ticket sent successfully to {email}!", "success")
+                        print(f"✅ Ticket sent successfully to {email}")
+                    else:
+                        print(f"Sending QR file: {qr_filename}")
+                        send_email(
+                            email,
+                            "Your QR Code Ticket 🎟️",
+                            f"Hello {name},\n\nHere is your unique QR code ticket.\n\nThanks!",
+                            qr_filename
+                        )
+                        flash(f"QR code sent successfully to {email}!", "success")
+                        print(f"✅ QR code sent successfully to {email}")
+                        
+                    # Mark as sent
+                    mark_as_sent(unique_id)
+                    print(f"Marked {unique_id} as sent")
                     
                 except Exception as e:
-                    print(f"Ticket generation failed: {e}")
+                    print(f"❌ Email sending failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    flash(f"Failed to send email to {email}: {e}", "error")
+            else:
+                print(f"❌ Missing email ({email}) or QR filename ({qr_filename})")
+                flash("Missing email or QR code file", "error")
             
-            # Send QR email as before
-            if email and qr_filename:
-                # Send the generated ticket instead of raw QR
-                if os.path.exists(ticket_file):
-                    # Extract just the filename for send_email function
-                    ticket_filename = os.path.basename(ticket_file)
-                    send_email(
-                        email,
-                        "Your Event Ticket 🎟️",
-                        f"Hello {name},\n\nHere is your event ticket with QR code.\n\nThanks!",
-                        ticket_file  # Send full ticket image instead of QR
-                    )
-                else:
-                    # Fallback to QR if ticket generation failed
-                    send_email(
-                        email,
-                        "Your QR Code Ticket 🎟️",
-                        f"Hello {name},\n\nHere is your unique QR code ticket.\n\nThanks!",
-                        qr_filename
-                    )
-            mark_as_sent(unique_id)
             break
+    
+    if not found_submission:
+        print(f"❌ No matching submission found for {unique_id}")
+        flash("Submission not found", "error")
 
-    return redirect(url_for('submissions'))
+    # Redirect back to the appropriate page
+    print(f"Redirecting - came_from_view: {came_from_view}")
+    if came_from_view:
+        return redirect(url_for('view_submission', unique_id=unique_id))
+    else:
+        return redirect(url_for('submissions'))
 
 @app.route("/submissions")
 def submissions():
