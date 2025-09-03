@@ -14,92 +14,97 @@
 </head>
 <body class="bg-gray-100 min-h-screen">
   <div class="container mx-auto px-4 py-8">
-    <header class="mb-8 flex justify-between items-center">
-      <div>
-        <h1 class="text-3xl font-bold text-indigo-700">Team Details</h1>
-        <p class="text-gray-600">View complete submission details</p>
-      </div>
-      <div class="flex space-x-3">
-        <a href="{{ url_for('submissions') }}" class="flex items-center px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
-          <i data-feather="arrow-left" class="mr-2"></i> Back
-        </a>
-
-        {% if sent %}
-          <button class="flex items-center px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed" disabled>
-            <i data-feather="check" class="mr-2"></i> Ticket Sent
-          </button>
-        {% else %}
-          <button id="sendTicketBtn" class="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg" data-id="{{ unique_id }}">
-            <i data-feather="send" class="mr-2"></i> Send Ticket
-          </button>
-        {% endif %}
-      </div>
-    </header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="detail-card bg-white rounded-xl shadow-md overflow-hidden lg:col-span-2">
-        <div class="p-6">
-          <h2 class="text-xl font-semibold text-gray-800 mb-4">Submission fields</h2>
-          <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <tbody class="bg-white divide-y divide-gray-200">
-                {% for key, val in data.items() %}
-                  {% if key != 'local_image_path' and val %}
-                    <tr>
-                      <td class="px-4 py-3 text-sm text-gray-500 w-48">{{ key }}</td>
-                      <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ val }}</td>
-                    </tr>
-                  {% endif %}
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="detail-card bg-white rounded-xl shadow-md overflow-hidden">
-        <div class="p-6">
-          <h2 class="text-xl font-semibold text-gray-800 mb-4">Uploaded Files</h2>
-
-          {% if submission.local_image_path %}
-            <div class="mb-3">
-                <h5>Uploaded Screenshot:</h5>
-                <img src="{{ url_for('static', filename=submission.local_image_path) }}" 
-                     alt="Uploaded Screenshot" 
-                     class="img-fluid" 
-                     style="max-width: 250px; height: auto;">
+    <!-- Header with Back button and Actions -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Submission Details</h1>
+                <p class="text-gray-600 mt-2">ID: {{ unique_id }}</p>
             </div>
-          {% elif submission.get('Upload Screenshot') or submission.get('Screenshot of payment (Rs.50 / team)') %}
-            <div class="mb-3">
-                <h5>Uploaded Screenshot:</h5>
-                <!-- Debug info -->
-                <p><strong>Debug Info:</strong></p>
-                <p>Local image path: {{ submission.local_image_path or 'None' }}</p>
-                <p>Original URL: {{ submission.get('Screenshot of payment (Rs.50 / team)') or submission.get('Upload Screenshot') or 'None' }}</p>
-                
-                {% if submission.local_image_path %}
-                    <div style="border: 2px solid green; padding: 10px; margin: 10px 0;">
-                        <p><strong>Displaying local image:</strong></p>
-                        <img src="{{ url_for('static', filename=submission.local_image_path) }}" 
-                             alt="Uploaded Screenshot" 
-                             class="img-fluid" 
-                             style="max-width: 500px; height: auto; border: 1px solid #ccc;">
-                    </div>
+            <div class="flex space-x-4">
+                <a href="{{ url_for('submissions') }}" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition duration-200">
+                    ← Back
+                </a>
+                {% if data.get('sent') %}
+                    <button class="bg-gray-400 text-white px-6 py-2 rounded-lg cursor-not-allowed opacity-50" disabled>
+                        ✓ Sent
+                    </button>
                 {% else %}
-                    <div style="border: 2px solid red; padding: 10px; margin: 10px 0;">
-                        <p><strong>Image not downloaded. Original URL:</strong></p>
-                        {% set original_url = submission.get('Screenshot of payment (Rs.50 / team)') or submission.get('Upload Screenshot') %}
-                        {% if original_url %}
-                            <a href="{{ original_url }}" target="_blank" class="btn btn-primary">View Original</a>
-                        {% else %}
-                            <p>No image URL found</p>
-                        {% endif %}
-                    </div>
+                    <a href="{{ url_for('send', unique_id=unique_id) }}" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg transition duration-200">
+                        Send Ticket
+                    </a>
                 {% endif %}
             </div>
-          {% endif %}
         </div>
-      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Main Content -->
+        <div class="lg:col-span-2">
+            <!-- Submission Fields -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">Submission Fields</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for key, val in submission.items() %}
+                                {% if key != 'local_image_path' and val %}
+                                    <tr>
+                                        <td class="px-4 py-3 text-sm text-gray-500 w-48">{{ key }}</td>
+                                        <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ val }}</td>
+                                    </tr>
+                                {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="lg:col-span-1">
+            <!-- Uploaded Files -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">Uploaded Files</h2>
+                
+                <div class="space-y-4">
+                            <div>
+                                <h3 class="font-semibold text-gray-700 mb-2">Uploaded Screenshot:</h3>
+                                
+                                {% if data.get('local_image_path') %}
+                                    {% set image_path = data.get('local_image_path') %}
+                                    <!-- Display the downloaded image -->
+                                    <div class="border rounded-lg p-2">
+                                        <img src="{{ url_for('static', filename=image_path) }}" 
+                                             alt="Uploaded Screenshot" 
+                                             class="max-w-sm max-h-80 w-auto h-auto rounded-lg shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
+                                             onclick="window.open(this.src, '_blank')"
+                                             title="Click to view full size"
+                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                        
+                                        <!-- Fallback if image fails to load -->
+                                        <div style="display:none;" class="text-center py-8 text-gray-500">
+                                            <p>❌ Image failed to load</p>
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <!-- Fallback when no local image -->
+                                    <div class="border border-red-300 rounded-lg p-4 bg-red-50">
+                                        <p class="text-red-600 font-medium">Image not downloaded. Original URL:</p>
+                                        {% set original_url = data.get("Screenshot of payment (Rs.50 / team)") or data.get("Upload Screenshot") or data.get("Screenshot") or "" %}
+                                        {% if original_url %}
+                                            <a href="{{ original_url }}" target="_blank" class="text-blue-600 hover:underline text-sm break-all">
+                                                View Original
+                                            </a>
+                                        {% else %}
+                                            <p class="text-gray-500 text-sm">No image URL found</p>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                </div>
+            </div>
+        </div>
     </div>
   </div>
 

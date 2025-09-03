@@ -133,39 +133,59 @@ def process_submission(data):
     return leader_name, email, qr_filename, json_filename, unique_id
 
 def mark_as_sent(unique_id):
-    for fname in os.listdir(OUTPUT_DIR):
-        if fname.endswith('.json'):
-            with open(os.path.join(OUTPUT_DIR, fname), encoding="utf-8") as f:
-                data = json.load(f)
-            timestamp = data.get('Timestamp', '')
-            email = data.get('Email address', '')
-            unique_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
-            file_unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{unique_hash}"
-            if file_unique_id == unique_id:
-                data['sent'] = True
-                with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                break
-
-    # Mark as sent in the SENT_IDS_FILE
+    """Mark a submission as sent by updating its JSON file"""
     try:
-        with open(SENT_IDS_FILE, 'r', encoding='utf-8') as f:
-            sent_ids = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        sent_ids = []
-
-    if unique_id not in sent_ids:
-        sent_ids.append(unique_id)
-        with open(SENT_IDS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(sent_ids, f, indent=2)
+        # Find and update the corresponding JSON file
+        for fname in os.listdir(OUTPUT_DIR):
+            if fname.endswith('.json'):
+                file_path = os.path.join(OUTPUT_DIR, fname)
+                with open(file_path, 'r', encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                timestamp = data.get('Timestamp', '')
+                email = data.get('Email address', '')
+                if timestamp and email:
+                    uid_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
+                    file_unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{uid_hash}"
+                    
+                    if file_unique_id == unique_id:
+                        # Update the sent status
+                        data['sent'] = True
+                        # Write back to file
+                        with open(file_path, 'w', encoding="utf-8") as f:
+                            json.dump(data, f, indent=2, ensure_ascii=False)
+                        print(f"✅ Updated sent status for {unique_id}")
+                        return True
+        
+        print(f"❌ No JSON file found for {unique_id}")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Error marking as sent: {e}")
+        return False
 
 def is_sent(unique_id):
-    """Check if a submission has been sent"""
+    """Check if a submission has been sent by reading from JSON files"""
     try:
-        with open(SENT_IDS_FILE, 'r') as f:
-            sent_ids = json.load(f)
-        return unique_id in sent_ids
-    except (FileNotFoundError, json.JSONDecodeError):
+        for fname in os.listdir(OUTPUT_DIR):
+            if fname.endswith('.json'):
+                file_path = os.path.join(OUTPUT_DIR, fname)
+                with open(file_path, 'r', encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                timestamp = data.get('Timestamp', '')
+                email = data.get('Email address', '')
+                if timestamp and email:
+                    uid_hash = hashlib.sha1((timestamp + email).encode()).hexdigest()[:8]
+                    file_unique_id = f"{timestamp.replace('/', '').replace(':', '').replace(' ', '')}_{uid_hash}"
+                    
+                    if file_unique_id == unique_id:
+                        return data.get('sent', False)
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking sent status: {e}")
         return False
 
 def _load_module(path, name):
@@ -175,100 +195,89 @@ def _load_module(path, name):
     spec.loader.exec_module(mod)
     return mod
 
-def download_and_save_image(image_url, unique_id):
-    """Download image from Google Drive and save locally"""
-    print(f"=== DEBUG: Starting download for {unique_id} ===")
-    print(f"Original URL: {image_url}")
-    
-    if not image_url:
-        print("No image URL provided")
-        return None
-    
+def download_and_save_image(url, unique_id):
+    """Download image from URL and save it locally"""
     try:
-        # Convert Google Drive share URL to direct download URL
-        file_id = None
-        if "drive.google.com" in image_url:
+        print(f"=== DEBUG: Starting download for {unique_id} ===")
+        print(f"Original URL: {url}")
+        
+        if not url:
+            print("No URL provided")
+            return None
+            
+        # Handle Google Drive URLs
+        if 'drive.google.com' in url:
             print("Google Drive URL detected")
-            if "/file/d/" in image_url:
-                file_id = image_url.split("/file/d/")[1].split("/")[0]
+            # Extract file ID from various Google Drive URL formats
+            file_id = None
+            if '/file/d/' in url:
+                file_id = url.split('/file/d/')[1].split('/')[0]
                 print(f"Extracted file_id from /file/d/: {file_id}")
-            elif "id=" in image_url:
-                file_id = image_url.split("id=")[1].split("&")[0]
+            elif 'id=' in url:
+                file_id = url.split('id=')[1].split('&')[0]
                 print(f"Extracted file_id from id=: {file_id}")
-            elif "/open?id=" in image_url:
-                file_id = image_url.split("/open?id=")[1].split("&")[0]
+            elif '/open?id=' in url:
+                file_id = url.split('/open?id=')[1].split('&')[0]
                 print(f"Extracted file_id from /open?id=: {file_id}")
             
             if file_id:
-                # Try multiple download methods
-                urls_to_try = [
-                    f"https://drive.google.com/uc?export=download&id={file_id}",
-                    f"https://drive.google.com/uc?id={file_id}&export=download",
-                    f"https://docs.google.com/uc?export=download&id={file_id}"
-                ]
+                # Convert to direct download URL
+                url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                print(f"Converted to direct download URL: {url}")
+        
+        # Download the image
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, stream=True, timeout=30)
+        print(f"Response status: {response.status_code}")
+        print(f"Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
+        print(f"Content-Length: {response.headers.get('Content-Length', 'Unknown')}")
+        
+        if response.status_code == 200:
+            # Check if it's actually an image
+            content_type = response.headers.get('Content-Type', '').lower()
+            if any(img_type in content_type for img_type in ['image/', 'jpeg', 'jpg', 'png', 'gif']):
+                print("Valid image content detected")
                 
-                for direct_url in urls_to_try:
-                    print(f"Trying URL: {direct_url}")
-                    try:
-                        response = requests.get(direct_url, timeout=30, allow_redirects=True)
-                        print(f"Response status: {response.status_code}")
-                        print(f"Content-Type: {response.headers.get('content-type', 'Unknown')}")
-                        print(f"Content-Length: {len(response.content)}")
-                        
-                        # Check if we got actual image content
-                        content_type = response.headers.get('content-type', '').lower()
-                        if any(img_type in content_type for img_type in ['image/', 'jpeg', 'png', 'gif']):
-                            print("Valid image content detected")
-                            break
-                        elif response.content.startswith(b'\x89PNG') or response.content.startswith(b'\xff\xd8\xff'):
-                            print("Image content detected by file signature")
-                            break
-                        else:
-                            print(f"Content preview: {response.content[:100]}")
-                            continue
-                    except Exception as e:
-                        print(f"Failed to download from {direct_url}: {e}")
-                        continue
-                else:
-                    print("All download URLs failed")
-                    return None
-                    
+                # Create the images directory
+                static_dir = os.path.join(os.path.dirname(__file__), "static")
+                images_dir = os.path.join(static_dir, "uploaded_images")
+                print(f"Images directory: {os.path.abspath(images_dir)}")
+                os.makedirs(images_dir, exist_ok=True)
+                
+                # Save the image
+                file_extension = '.jpg'  # Default extension
+                if 'png' in content_type:
+                    file_extension = '.png'
+                elif 'gif' in content_type:
+                    file_extension = '.gif'
+                
+                filename = f"{unique_id}_uploaded{file_extension}"
+                file_path = os.path.join(images_dir, filename)
+                
+                with open(file_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                
+                print(f"Successfully saved to: {file_path}")
+                print(f"File size: {os.path.getsize(file_path)} bytes")
+                
+                # Return relative path for use in templates
+                relative_path = f"uploaded_images/{filename}"
+                print(f"Returning relative path: {relative_path}")
+                return relative_path
             else:
-                print("Could not extract file_id")
+                print(f"Not an image file. Content-Type: {content_type}")
                 return None
         else:
-            direct_url = image_url
-            response = requests.get(direct_url, timeout=30)
-        
-        response.raise_for_status()
-        
-        # Save locally
-        images_dir = os.path.join(os.path.dirname(__file__), "static", "uploaded_images")
-        os.makedirs(images_dir, exist_ok=True)
-        print(f"Images directory: {images_dir}")
-        
-        # Determine file extension
-        content_type = response.headers.get('content-type', '')
-        if 'jpeg' in content_type or 'jpg' in content_type or response.content.startswith(b'\xff\xd8\xff'):
-            ext = '.jpg'
-        elif 'png' in content_type or response.content.startswith(b'\x89PNG'):
-            ext = '.png'
-        else:
-            ext = '.jpg'  # default
-        
-        local_filename = f"{unique_id}_uploaded{ext}"
-        local_path = os.path.join(images_dir, local_filename)
-        
-        with open(local_path, 'wb') as f:
-            f.write(response.content)
-        
-        print(f"Successfully saved to: {local_path}")
-        print(f"File size: {os.path.getsize(local_path)} bytes")
-        
-        return f"uploaded_images/{local_filename}"  # Remove 'static/' prefix
-        
+            print(f"Failed to download. Status: {response.status_code}")
+            return None
+            
     except Exception as e:
-        print(f"Failed to download image: {e}")
+        print(f"Error downloading image: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -593,6 +602,10 @@ def view_submission(unique_id):
                 print(f"Download result: {local_image_path}")
             
             data['local_image_path'] = local_image_path
+            # Check sent status from JSON files (more reliable than Google Sheets)
+            sent_status = is_sent(unique_id)
+            data['sent'] = sent_status
+            print(f"Sent status for {unique_id}: {sent_status}")
             
             # Check if file actually exists locally
             if local_image_path:
@@ -603,7 +616,10 @@ def view_submission(unique_id):
                     print(f"Image file NOT found at: {full_path}")
                     data['local_image_path'] = None
             
-            return render_template("view_submission.html", data=data, submission=data, unique_id=unique_id)
+            # Remove fields that shouldn't be displayed in the submission fields section
+            display_data = {k: v for k, v in data.items() if k not in ['local_image_path', 'Branch', 'Semester', 'sent']}
+            
+            return render_template("view_submission.html", data=data, submission=display_data, unique_id=unique_id)
     
     return redirect(url_for('submissions'))
 
