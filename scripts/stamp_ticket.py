@@ -22,7 +22,7 @@ FONT_PATHS = [
 ]
 
 # Anchor defaults (0..1)
-QR_ANCHOR_X_PCT = 0.5
+QR_ANCHOR_X_PCT = 0.51
 QR_ANCHOR_Y_PCT = 0.73
 OFFSET_X_PX = 0
 OFFSET_Y_PX = 0

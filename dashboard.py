@@ -488,12 +488,39 @@ def send(unique_id):
             if email and qr_filename:
                 print(f"📧 Attempting to send email to: {email}")
                 try:
+                    # Create email body
+                    email_subject = "Registration Confirmed – SIH 2025 Internal Hackathon"
+                    email_body = f"""Dear {name},
+
+Thank you for registering for the SIH 2025 Internal Hackathon organized by DPG Institute of Technology and Management, Gurugram.
+Your registration has been successfully received.
+
+**Event Details**
+Date: 17th September 2025
+Venue: Future of Work Lab (Room No. 108, Block A)
+Time: 10:00 AM onwards
+
+To stay updated with important announcements, kindly join the official WhatsApp group using the link below:
+👉 **Join WhatsApp Group** (https://chat.whatsapp.com/L3aqrswFv8E3BUWXUMfbkK?mode=ems_copy_t)
+
+**Your Entry Ticket**
+A QR ticket is attached with this email. Please carry it (either on your phone or printed) for entry on the event day.
+
+We look forward to seeing your innovative ideas and solutions. 🚀
+
+For any queries, feel free to contact:
+📞 Akshat – +91 8743910949
+📞 Arun – +91 9140476153
+
+Best Regards,
+Team SIH 2025 Internal Hackathon"""
+                    
                     if ticket_file and os.path.exists(ticket_file):
                         print(f"Sending ticket file: {ticket_file}")
                         send_email(
                             email,
-                            "Your Event Ticket 🎟️",
-                            f"Hello {name},\n\nHere is your event ticket with QR code.\n\nThanks!",
+                            email_subject,
+                            email_body,
                             ticket_file
                         )
                         flash(f"Ticket sent successfully to {email}!", "success")
@@ -502,8 +529,8 @@ def send(unique_id):
                         print(f"Sending QR file: {qr_filename}")
                         send_email(
                             email,
-                            "Your QR Code Ticket 🎟️",
-                            f"Hello {name},\n\nHere is your unique QR code ticket.\n\nThanks!",
+                            email_subject,
+                            email_body,
                             qr_filename
                         )
                         flash(f"QR code sent successfully to {email}!", "success")
@@ -590,9 +617,29 @@ def view_submission(unique_id):
             # Check all possible screenshot field names
             image_url = (data.get("Screenshot of payment (Rs.50 / team)") or 
                         data.get("Upload Screenshot") or 
-                        data.get("Screenshot") or "").strip()
+                        data.get("Screenshot") or 
+                        data.get("Payment Screenshot") or
+                        data.get("Screenshot of Payment") or
+                        data.get("Upload payment screenshot") or
+                        data.get("Payment Proof") or
+                        data.get("Screenshot of payment") or
+                        ""
+            ).strip()
             
-            print(f"Found image URL: {image_url}")
+            # Debug: Print all available keys to identify the correct field name
+            print(f"Available fields in data: {list(data.keys())}")
+            print(f"Looking for image URL in: {unique_id}")
+            
+            # Try to find any field that might contain an image URL
+            if not image_url:
+                for key, value in data.items():
+                    if any(keyword in key.lower() for keyword in ['screenshot', 'image', 'photo', 'payment', 'upload']):
+                        if value and 'drive.google.com' in str(value):
+                            image_url = str(value).strip()
+                            print(f"Found image URL in field '{key}': {image_url}")
+                            break
+            
+            print(f"Final image URL: {image_url}")
             
             # Download and save any uploaded images
             local_image_path = None
